@@ -2,9 +2,9 @@
 import streamlit as st
 import os
 # Load secrets from Streamlit Cloud if available
-if hasattr(st, "secrets"):
-    for key, value in st.secrets.items():
-        os.environ[key] = str(value)
+#if hasattr(st, "secrets"):
+#    for key, value in st.secrets.items():
+#        os.environ[key] = str(value)
 
 from src.graph import app as graph_app
 from langchain_core.messages import HumanMessage
