@@ -1,0 +1,12 @@
+langgraph
+langchain
+langchain-openai
+langchain-anthropic
+google-api-python-client
+youtube-transcript-api
+python-dotenv
+pyyaml
+requests
+beautifulsoup4
+chromadb
+streamlit
