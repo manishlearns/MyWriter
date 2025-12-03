@@ -78,12 +78,151 @@ class YouTubeTool:
                  print(f"Error content: {e.content}")
             return []
 
-    def get_transcript(self, video_id):
+    def get_transcript_via_official_api(self, video_id):
+        """
+        Try to get transcript using YouTube's official Captions API.
+        This doesn't get blocked but only works for videos with available captions.
+        """
+        if not self.youtube:
+            return None
+            
         try:
-            # Setup cookies if available
+            # List available captions
+            captions_response = self.youtube.captions().list(
+                part="snippet",
+                videoId=video_id
+            ).execute()
+            
+            if not captions_response.get("items"):
+                print(f"No captions available via official API for {video_id}")
+                return None
+            
+            # Find English caption track
+            english_caption = None
+            for item in captions_response["items"]:
+                lang = item["snippet"]["language"]
+                if lang in ["en", "en-US", "en-GB"]:
+                    english_caption = item
+                    break
+            
+            if not english_caption:
+                # Try any caption and note it's not English
+                print("No English captions found, trying first available...")
+                english_caption = captions_response["items"][0]
+            
+            # Download the caption track
+            # Note: This requires OAuth2 authorization, not just API key
+            # So this method is limited - it works for your own videos
+            caption_id = english_caption["id"]
+            
+            # For public videos, we can't download directly without OAuth
+            # But we can use the timedtext endpoint as a workaround
+            caption_url = f"https://www.youtube.com/api/timedtext?lang=en&v={video_id}"
+            response = requests.get(caption_url)
+            
+            if response.status_code == 200 and response.text:
+                # Parse the XML response
+                import re
+                # Remove XML tags and extract text
+                text = re.sub(r'<[^>]+>', ' ', response.text)
+                text = ' '.join(text.split())  # Clean up whitespace
+                return text
+            
+            return None
+            
+        except Exception as e:
+            print(f"Official Captions API failed for {video_id}: {e}")
+            return None
+
+    def get_transcript_via_rapidapi(self, video_id):
+        """
+        Get transcript using RapidAPI YouTube Transcripts service.
+        This bypasses YouTube's IP blocking since requests go through RapidAPI.
+        """
+        rapidapi_key = os.getenv("RAPIDAPI_KEY")
+        if not rapidapi_key:
+            print("RAPIDAPI_KEY not set in environment")
+            return None
+        
+        try:
+            print(f"Fetching transcript via RapidAPI for {video_id}...")
+            
+            url = "https://youtube-transcripts.p.rapidapi.com/youtube/transcript"
+            headers = {
+                "X-RapidAPI-Key": rapidapi_key,
+                "X-RapidAPI-Host": "youtube-transcripts.p.rapidapi.com"
+            }
+            params = {
+                "videoId": video_id,
+                "lang": "en"
+            }
+            
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            print(f"RapidAPI response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Parse response - extract text from content array
+                if isinstance(data, dict) and "content" in data:
+                    content = data["content"]
+                    if isinstance(content, list):
+                        transcript = " ".join([
+                            item.get("text", "") 
+                            for item in content if isinstance(item, dict)
+                        ])
+                        if transcript.strip():
+                            return transcript
+                    elif isinstance(content, str):
+                        return content
+                
+                # Fallback: try other common fields
+                if isinstance(data, list):
+                    transcript = " ".join([
+                        item.get("text", "") for item in data 
+                        if isinstance(item, dict)
+                    ])
+                    if transcript.strip():
+                        return transcript
+                        
+                elif isinstance(data, dict):
+                    for field in ["transcript", "transcription", "text"]:
+                        if field in data and data[field]:
+                            return str(data[field])
+            
+            print(f"RapidAPI failed - Status: {response.status_code}, Response: {response.text[:500]}")
+            return None
+            
+        except Exception as e:
+            print(f"RapidAPI error: {e}")
+            return None
+
+    def get_transcript(self, video_id):
+        """
+        Get transcript - uses RapidAPI if configured, otherwise falls back to direct method.
+        """
+        # Try RapidAPI first (works on cloud without blocking)
+        rapidapi_key = os.getenv("RAPIDAPI_KEY")
+        if rapidapi_key:
+            transcript = self.get_transcript_via_rapidapi(video_id)
+            if transcript:
+                print("✅ Got transcript via RapidAPI")
+                return transcript
+            print("RapidAPI failed, trying fallback methods...")
+        
+        # Fallback: Try official API
+        print(f"Attempting official captions API for {video_id}...")
+        official_transcript = self.get_transcript_via_official_api(video_id)
+        if official_transcript:
+            print("Successfully fetched transcript via official API!")
+            return official_transcript
+        
+        # Fallback: Try direct youtube-transcript-api
+        print("Official API failed, trying youtube-transcript-api...")
+        
+        try:
             http_client = None
             if os.path.exists("cookies.txt"):
-                print("Loading cookies from cookies.txt...")
                 try:
                     cookie_jar = http.cookiejar.MozillaCookieJar("cookies.txt")
                     cookie_jar.load()
@@ -92,43 +231,31 @@ class YouTubeTool:
                 except Exception as e:
                     print(f"Warning: Failed to load cookies.txt: {e}")
             
-            # Setup proxy if available
             proxy_config = None
             proxy_url = os.getenv("YOUTUBE_PROXY")
             if proxy_url:
-                print(f"Using proxy: {proxy_url}")
                 proxy_config = GenericProxyConfig(
                     http_url=proxy_url,
                     https_url=proxy_url
                 )
 
-            # Instantiate the API with cookies and/or proxy
             if http_client or proxy_config:
-                # If we have custom config, we must instantiate
                 transcript_api = YouTubeTranscriptApi(http_client=http_client, proxy_config=proxy_config)
                 transcript_list = transcript_api.list(video_id)
             else:
-                # Default usage
                 transcript_api = YouTubeTranscriptApi()
                 transcript_list = transcript_api.list(video_id)
             
-            # Try to find English transcript (manual or generated)
-            # find_transcript takes a list of language codes
             transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
-            
-            # Fetch the actual data
             transcript_data = transcript.fetch()
             
-            # Format it
             formatter = TextFormatter()
-            transcript_text = formatter.format_transcript(transcript_data)
-            return transcript_text
+            return formatter.format_transcript(transcript_data)
             
         except Exception as e:
             error_msg = str(e)
             print(f"Error fetching transcript for {video_id}: {error_msg}")
             if "blocking requests" in error_msg or "Sign in to confirm you're not a bot" in error_msg:
                 print("\n!!! YOUTUBE IP BLOCK DETECTED !!!")
-                print("Please follow the instructions in README_COOKIES.md to fix this.")
-                print("You need to export your browser cookies to a 'cookies.txt' file in the project root.\n")
+                print("Set RAPIDAPI_KEY in your environment to bypass this.")
             return None
