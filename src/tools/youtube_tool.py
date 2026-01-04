@@ -129,6 +129,8 @@ class YouTubeTool:
             print(f"Error fetching transcript for {video_id}: {error_msg}")
             if "blocking requests" in error_msg or "Sign in to confirm you're not a bot" in error_msg:
                 print("\n!!! YOUTUBE IP BLOCK DETECTED !!!")
-                print("Please follow the instructions in README_COOKIES.md to fix this.")
-                print("You need to export your browser cookies to a 'cookies.txt' file in the project root.\n")
+                print("If you are running on Streamlit Cloud, you MUST use a proxy.")
+                print("1. Get a residential proxy (http://user:pass@host:port).")
+                print("2. Add it to Streamlit Secrets as 'YOUTUBE_PROXY'.")
+                print("\nAlternatively for local use, check README_COOKIES.md.\n")
             return None
