@@ -19,15 +19,25 @@ class YouTubeTool:
             return []
         
         try:
-            # 1. Get Uploads Playlist ID
-            channel_response = self.youtube.channels().list(
-                part="contentDetails",
-                id=channel_id
-            ).execute()
+            # 1. Resolve Channel ID
+            # If input looks like a handle (starts with @), skip direct ID lookup
+            if channel_id.startswith("@"):
+                print(f"Input '{channel_id}' looks like a handle. Searching for channel...")
+                channel_items = [] # Force fallback to search
+            else:
+                try:
+                    channel_response = self.youtube.channels().list(
+                        part="contentDetails",
+                        id=channel_id
+                    ).execute()
+                    channel_items = channel_response.get("items", [])
+                except Exception as e:
+                    print(f"Direct ID lookup failed (expected if input is a handle): {e}")
+                    channel_items = []
             
-            print(f"DEBUG: Channel Response for {channel_id}: {channel_response}")
+            print(f"DEBUG: Channel Lookup Result: {len(channel_items)} items found")
 
-            if not channel_response.get("items"):
+            if not channel_items:
                 print(f"Channel ID lookup failed for {channel_id}. Trying search fallback...")
                 # Fallback: Search for the channel
                 search_response = self.youtube.search().list(
