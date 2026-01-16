@@ -167,7 +167,23 @@ class YouTubeTool:
                 "lang": "en"
             }
             
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = None
+            for attempt in range(2):
+                try:
+                    response = requests.get(url, headers=headers, params=params, timeout=60)
+                    break
+                except requests.exceptions.Timeout:
+                    print(f"RapidAPI timeout (attempt {attempt+1}/3). Retrying...")
+                    import time
+                    time.sleep(2)
+                except Exception as e:
+                     print(f"RapidAPI connection failed: {e}")
+                     break
+
+            if not response:
+                 print("RapidAPI failed after retries.")
+                 return None
+
             print(f"RapidAPI response status: {response.status_code}")
             
             if response.status_code == 200:
