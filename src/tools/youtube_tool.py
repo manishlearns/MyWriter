@@ -136,37 +136,61 @@ class YouTubeTool:
 
     def get_transcript_via_rapidapi(self, video_id):
         """
-        Get transcript using RapidAPI YouTube Transcript service.
+        Get transcript using RapidAPI YouTube Transcripts service.
         This bypasses YouTube's IP blocking since requests go through RapidAPI.
         """
         rapidapi_key = os.getenv("RAPIDAPI_KEY")
         if not rapidapi_key:
+            print("RAPIDAPI_KEY not set in environment")
             return None
         
         try:
             print(f"Fetching transcript via RapidAPI for {video_id}...")
-            url = "https://youtube-transcriptor.p.rapidapi.com/transcript"
+            
+            url = "https://youtube-transcripts.p.rapidapi.com/youtube/transcript"
             headers = {
                 "X-RapidAPI-Key": rapidapi_key,
-                "X-RapidAPI-Host": "youtube-transcriptor.p.rapidapi.com"
+                "X-RapidAPI-Host": "youtube-transcripts.p.rapidapi.com"
             }
-            params = {"video_id": video_id, "lang": "en"}
+            params = {
+                "videoId": video_id,
+                "lang": "en"
+            }
             
             response = requests.get(url, headers=headers, params=params, timeout=30)
+            print(f"RapidAPI response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
-                # Parse response - can be list of segments or dict
+                
+                # Parse response - extract text from content array
+                if isinstance(data, dict) and "content" in data:
+                    content = data["content"]
+                    if isinstance(content, list):
+                        transcript = " ".join([
+                            item.get("text", "") 
+                            for item in content if isinstance(item, dict)
+                        ])
+                        if transcript.strip():
+                            return transcript
+                    elif isinstance(content, str):
+                        return content
+                
+                # Fallback: try other common fields
                 if isinstance(data, list):
                     transcript = " ".join([
                         item.get("text", "") for item in data 
                         if isinstance(item, dict)
                     ])
-                    return transcript
+                    if transcript.strip():
+                        return transcript
+                        
                 elif isinstance(data, dict):
-                    return data.get("transcription") or data.get("transcript") or data.get("text")
+                    for field in ["transcript", "transcription", "text"]:
+                        if field in data and data[field]:
+                            return str(data[field])
             
-            print(f"RapidAPI returned status {response.status_code}: {response.text}")
+            print(f"RapidAPI failed - Status: {response.status_code}, Response: {response.text[:500]}")
             return None
             
         except Exception as e:
@@ -182,7 +206,7 @@ class YouTubeTool:
         if rapidapi_key:
             transcript = self.get_transcript_via_rapidapi(video_id)
             if transcript:
-                print("✅ Got transcript via RapidAPI")
+                print("Got transcript via RapidAPI")
                 return transcript
             print("RapidAPI failed, trying fallback methods...")
         

@@ -1,17 +1,22 @@
-
 import streamlit as st
 import os
+from dotenv import load_dotenv
 
-# Load secrets from Streamlit Cloud if available
-# This MUST happen before importing other modules that use env vars
-if hasattr(st, "secrets") and len(st.secrets) > 0:
-    for key, value in st.secrets.items():
-        if isinstance(value, str):
-            os.environ[key] = value
-        elif hasattr(value, '__iter__'):
-            # Handle nested secrets (like [section] in secrets.toml)
-            for sub_key, sub_value in value.items():
-                os.environ[sub_key] = str(sub_value)
+# Load from .env file first (for local development)
+load_dotenv()
+
+# Then try to load from Streamlit Cloud secrets (for deployment)
+try:
+    if hasattr(st, "secrets") and st.secrets:
+        for key, value in st.secrets.items():
+            if isinstance(value, str):
+                os.environ[key] = value
+            elif hasattr(value, '__iter__'):
+                for sub_key, sub_value in value.items():
+                    os.environ[sub_key] = str(sub_value)
+except Exception:
+    # No Streamlit secrets available (local dev) - .env already loaded
+    pass
 
 from src.graph import app as graph_app
 from langchain_core.messages import HumanMessage
