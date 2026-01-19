@@ -27,6 +27,15 @@ st.set_page_config(page_title="LinkedIn Article Automation", layout="wide")
 # Title
 st.title("LinkedIn Article Automation System")
 
+# Initialize Scheduler
+@st.cache_resource
+def start_scheduler():
+    from src.scheduler import scheduler
+    scheduler.start_polling(interval=60)
+    return scheduler
+
+scheduler = start_scheduler()
+
 # Sidebar Configuration
 with st.sidebar:
     st.header("Configuration")
@@ -201,8 +210,55 @@ try:
                 
                 # Editable Text Area
                 # Use a form to prevent premature reruns
+                # Editable Text Area
+                # Use a form to prevent premature reruns
+                
+                # Image Selection Section
+                st.write("---")
+                st.subheader("Select an Image (Optional)")
+                image_options = state_values.get("image_options", [])
+                selected_image_idx = 0
+                
+                if image_options:
+                    # Display images in a grid (Up to 8 images, 4 per row)
+                    
+                    # Helper to render a row
+                    def render_row(images, start_idx):
+                        cols = st.columns(4)
+                        for i, img in enumerate(images):
+                            abs_idx = start_idx + i
+                            with cols[i]:
+                                if img.get("thumb"):
+                                    st.image(img["thumb"], caption=f"By {img.get('author', 'Unknown')}")
+                                    if st.button(f"Select #{abs_idx+1}", key=f"img_sel_{abs_idx}"):
+                                        st.session_state[f"selected_img_idx_{thread['configurable']['thread_id']}"] = abs_idx
+
+                    # Row 1 (0-4)
+                    render_row(image_options[:4], 0)
+                    
+                    # Row 2 (4-8)
+                    if len(image_options) > 4:
+                        st.write("") # Spacer
+                        render_row(image_options[4:8], 4)
+
+                    # Persist selection
+                    saved_idx = st.session_state.get(f"selected_img_idx_{thread['configurable']['thread_id']}", -1)
+                    if 0 <= saved_idx < len(image_options):
+                         st.info(f"Selected Image: #{saved_idx + 1}")
+                    else:
+                         st.info("No image selected (Default).")
+
                 with st.form("edit_draft_form"):
                     edited_draft = st.text_area("Edit before publishing:", value=final_draft, height=400)
+                    
+                    st.write("---")
+                    st.write("**Schedule Post (Optional)**")
+                    schedule_col1, schedule_col2 = st.columns(2)
+                    with schedule_col1:
+                        schedule_date = st.date_input("Date", value=None)
+                    with schedule_col2:
+                         schedule_time = st.time_input("Time", value=None)
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         approve_btn = st.form_submit_button("Approve & Publish")
@@ -210,9 +266,27 @@ try:
                         reject_btn = st.form_submit_button("Reject & restart")
                 
                 if approve_btn:
+                    # Handle scheduling
+                    scheduled_time_str = None
+                    if schedule_date and schedule_time:
+                         import datetime
+                         # Combine date and time
+                         dt = datetime.datetime.combine(schedule_date, schedule_time)
+                         scheduled_time_str = dt.isoformat()
+                    
+                    # Handle Image
+                    final_selected_img = None
+                    saved_idx = st.session_state.get(f"selected_img_idx_{thread['configurable']['thread_id']}", -1)
+                    if image_options and 0 <= saved_idx < len(image_options):
+                         final_selected_img = image_options[saved_idx]
+
                     # Update state
-                    st.info("Updating draft...")
-                    graph_app.update_state(thread, {"final_draft": edited_draft})
+                    st.info("Updating draft and publishing details...")
+                    graph_app.update_state(thread, {
+                        "final_draft": edited_draft,
+                        "scheduled_time": scheduled_time_str,
+                        "selected_image": final_selected_img
+                    })
                     
                     # Resume graph
                     with status_container:
@@ -224,7 +298,10 @@ try:
                                 if "messages" in state_update:
                                     st.caption(state_update["messages"][-1])
                         
-                        st.success("Published Successfully!")
+                        if scheduled_time_str:
+                             st.success(f"Post Scheduled for {scheduled_time_str}! Keep this app running.")
+                        else:
+                             st.success("Published Successfully!")
                         st.balloons()
                         st.rerun()
                 

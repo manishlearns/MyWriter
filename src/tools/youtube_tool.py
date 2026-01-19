@@ -19,15 +19,25 @@ class YouTubeTool:
             return []
         
         try:
-            # 1. Get Uploads Playlist ID
-            channel_response = self.youtube.channels().list(
-                part="contentDetails",
-                id=channel_id
-            ).execute()
+            # 1. Resolve Channel ID
+            # If input looks like a handle (starts with @), skip direct ID lookup
+            if channel_id.startswith("@"):
+                print(f"Input '{channel_id}' looks like a handle. Searching for channel...")
+                channel_items = [] # Force fallback to search
+            else:
+                try:
+                    channel_response = self.youtube.channels().list(
+                        part="contentDetails",
+                        id=channel_id
+                    ).execute()
+                    channel_items = channel_response.get("items", [])
+                except Exception as e:
+                    print(f"Direct ID lookup failed (expected if input is a handle): {e}")
+                    channel_items = []
             
-            print(f"DEBUG: Channel Response for {channel_id}: {channel_response}")
+            print(f"DEBUG: Channel Lookup Result: {len(channel_items)} items found")
 
-            if not channel_response.get("items"):
+            if not channel_items:
                 print(f"Channel ID lookup failed for {channel_id}. Trying search fallback...")
                 # Fallback: Search for the channel
                 search_response = self.youtube.search().list(
@@ -157,7 +167,23 @@ class YouTubeTool:
                 "lang": "en"
             }
             
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = None
+            for attempt in range(2):
+                try:
+                    response = requests.get(url, headers=headers, params=params, timeout=60)
+                    break
+                except requests.exceptions.Timeout:
+                    print(f"RapidAPI timeout (attempt {attempt+1}/3). Retrying...")
+                    import time
+                    time.sleep(2)
+                except Exception as e:
+                     print(f"RapidAPI connection failed: {e}")
+                     break
+
+            if not response:
+                 print("RapidAPI failed after retries.")
+                 return None
+
             print(f"RapidAPI response status: {response.status_code}")
             
             if response.status_code == 200:
@@ -206,7 +232,7 @@ class YouTubeTool:
         if rapidapi_key:
             transcript = self.get_transcript_via_rapidapi(video_id)
             if transcript:
-                print("Got transcript via RapidAPI")
+                print("✅ Got transcript via RapidAPI")
                 return transcript
             print("RapidAPI failed, trying fallback methods...")
         
@@ -257,5 +283,8 @@ class YouTubeTool:
             print(f"Error fetching transcript for {video_id}: {error_msg}")
             if "blocking requests" in error_msg or "Sign in to confirm you're not a bot" in error_msg:
                 print("\n!!! YOUTUBE IP BLOCK DETECTED !!!")
-                print("Set RAPIDAPI_KEY in your environment to bypass this.")
+                print("If you are running on Streamlit Cloud, you MUST use a proxy or RapidAPI.")
+                print("1. Get a residential proxy and add it to Streamlit Secrets as 'YOUTUBE_PROXY'.")
+                print("2. OR set 'RAPIDAPI_KEY' in your environment to bypass this.")
+                print("\nAlternatively for local use, check README_COOKIES.md.\n")
             return None
