@@ -20,10 +20,20 @@ class YouTubeTool:
         
         try:
             # 1. Resolve Channel ID
-            # If input looks like a handle (starts with @), skip direct ID lookup
+            # If input looks like a handle (starts with @), use forHandle parameter
             if channel_id.startswith("@"):
-                print(f"Input '{channel_id}' looks like a handle. Searching for channel...")
-                channel_items = [] # Force fallback to search
+                print(f"Input '{channel_id}' looks like a handle. Using forHandle API...")
+                try:
+                    channel_response = self.youtube.channels().list(
+                        part="contentDetails",
+                        forHandle=channel_id
+                    ).execute()
+                    channel_items = channel_response.get("items", [])
+                    if channel_items:
+                        print(f"Resolved handle to channel: {channel_items[0]['id']}")
+                except Exception as e:
+                    print(f"forHandle lookup failed: {e}")
+                    channel_items = []
             else:
                 try:
                     channel_response = self.youtube.channels().list(
@@ -32,37 +42,14 @@ class YouTubeTool:
                     ).execute()
                     channel_items = channel_response.get("items", [])
                 except Exception as e:
-                    print(f"Direct ID lookup failed (expected if input is a handle): {e}")
+                    print(f"Direct ID lookup failed: {e}")
                     channel_items = []
             
             print(f"DEBUG: Channel Lookup Result: {len(channel_items)} items found")
 
             if not channel_items:
-                print(f"Channel ID lookup failed for {channel_id}. Trying search fallback...")
-                # Fallback: Search for the channel
-                search_response = self.youtube.search().list(
-                    part="snippet",
-                    q=channel_id,
-                    type="channel",
-                    maxResults=1
-                ).execute()
-                
-                if not search_response.get("items"):
-                    print(f"Channel not found via search either: {channel_id}")
-                    return []
-                
-                # Use the ID found from search
-                new_channel_id = search_response["items"][0]["snippet"]["channelId"]
-                print(f"Found channel via search: {new_channel_id}")
-                
-                # Retry getting content details with new ID
-                channel_response = self.youtube.channels().list(
-                    part="contentDetails",
-                    id=new_channel_id
-                ).execute()
-                
-                if not channel_response.get("items"):
-                     return []
+                print(f"Channel lookup failed for {channel_id}. No fallback available.")
+                return []
 
             uploads_playlist_id = channel_response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
             
